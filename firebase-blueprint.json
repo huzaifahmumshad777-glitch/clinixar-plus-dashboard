@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "Patient": {
+      "title": "Patient Record",
+      "description": "Details about a clinic patient and their appointment",
+      "type": "object",
+      "properties": {
+        "patient_name": { "type": "string", "description": "Full name of the patient" },
+        "age": { "type": "number", "description": "Age of the patient" },
+        "gender": { "type": "string", "enum": ["Male", "Female", "Other"] },
+        "phone_number": { "type": "string", "description": "Contact number" },
+        "email": { "type": "string", "description": "Patient email address" },
+        "priority": { "type": "string", "enum": ["Low", "Normal", "High", "Urgent"] },
+        "doctor_specialty": { "type": "string", "description": "Specialty of the doctor visited" },
+        "reason_for_visit": { "type": "string", "description": "Symptoms or reason for appointment" },
+        "visit_type": { "type": "string", "enum": ["OPD", "Emergency", "Follow-up", "Surgery"] },
+        "appointment_date": { "type": "string", "format": "date", "description": "Scheduled date" },
+        "consultation_fee": { "type": "number", "description": "Fee charged" },
+        "notes": { "type": "string", "description": "Additional clinical notes" },
+        "status": { "type": "string", "enum": ["Pending", "Completed", "Cancelled"] },
+        "ownerId": { "type": "string", "description": "UID of the user who owns this record" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["patient_name", "appointment_date", "ownerId", "created_at"]
+    },
+    "Prescription": {
+      "title": "Prescription",
+      "description": "Medicine prescription for a patient",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "medicines": { "type": "array" },
+        "instructions": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["patientId", "ownerId", "medicines"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Billing record for a patient visit",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Paid", "Unpaid", "Overdue"] },
+        "items": { "type": "array" },
+        "dueDate": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["patientId", "totalAmount", "ownerId"]
+    }
+  },
+  "firestore": {
+    "patients": {
+      "schema": "Patient",
+      "description": "Collection of patient records"
+    },
+    "prescriptions": {
+      "schema": "Prescription",
+      "description": "Collection of medicines prescribed"
+    },
+    "invoices": {
+      "schema": "Invoice",
+      "description": "Collection of financial invoices"
+    }
+  }
+}

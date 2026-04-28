@@ -1,0 +1,148 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Comprehensive validation for document creation
+    function isNewPatientValid(data) {
+      let requiredKeys = [
+        'patient_name', 'phone_number', 'doctor_specialty', 'visit_type', 
+        'appointment_date', 'ownerId', 'created_at', 'updated_at', 
+        'age', 'gender', 'consultation_fee', 'status', 'email', 'priority', 'reason_for_visit', 'notes'
+      ];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().size() == requiredKeys.size() &&
+             data.patient_name is string && data.patient_name.size() > 0 && data.patient_name.size() <= 200 &&
+             data.phone_number is string && data.phone_number.size() <= 20 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.priority in ['Low', 'Normal', 'High', 'Urgent'] &&
+             data.doctor_specialty is string && data.doctor_specialty.size() <= 100 &&
+             data.appointment_date is string && data.appointment_date.size() <= 20 &&
+             data.ownerId == request.auth.uid &&
+             data.age is number && data.age >= 0 && data.age <= 150 &&
+             data.gender in ['Male', 'Female', 'Other'] &&
+             data.visit_type in ['OPD', 'Emergency', 'Follow-up', 'Surgery'] &&
+             data.consultation_fee is number && data.consultation_fee >= 0 &&
+             data.notes is string && data.notes.size() <= 5000 &&
+             data.status in ['Pending', 'Completed', 'Cancelled'] &&
+             data.reason_for_visit is string && data.reason_for_visit.size() <= 1000;
+    }
+
+    // Validation for field types and values
+    function isFieldUpdateValid(data) {
+      return (!data.keys().contains('patient_name') || (data.patient_name is string && data.patient_name.size() > 0 && data.patient_name.size() <= 200)) &&
+             (!data.keys().contains('age') || (data.age is number && data.age >= 0 && data.age <= 150)) &&
+             (!data.keys().contains('consultation_fee') || (data.consultation_fee is number && data.consultation_fee >= 0)) &&
+             (!data.keys().contains('status') || data.status in ['Pending', 'Completed', 'Cancelled']) &&
+             (!data.keys().contains('gender') || data.gender in ['Male', 'Female', 'Other']) &&
+             (!data.keys().contains('priority') || data.priority in ['Low', 'Normal', 'High', 'Urgent']) &&
+             (!data.keys().contains('visit_type') || data.visit_type in ['OPD', 'Emergency', 'Follow-up', 'Surgery']) &&
+             (!data.keys().contains('notes') || (data.notes is string && data.notes.size() <= 5000));
+    }
+
+    function isValidPrescription(data) {
+      let required = ['patientId', 'patientName', 'medicines', 'instructions', 'date', 'ownerId'];
+      return data.keys().hasAll(required) &&
+             data.keys().size() == required.size() &&
+             data.patientId is string &&
+             data.patientName is string &&
+             data.medicines is list &&
+             data.medicines.size() > 0 &&
+             data.medicines.size() <= 50 &&
+             data.instructions is string &&
+             data.ownerId == request.auth.uid;
+    }
+
+    function isValidInvoice(data) {
+      let required = ['patientId', 'patientName', 'totalAmount', 'status', 'items', 'dueDate', 'ownerId', 'date'];
+      return data.keys().hasAll(required) &&
+             data.keys().size() == required.size() &&
+             data.patientId is string &&
+             data.patientName is string &&
+             data.totalAmount is number &&
+             data.totalAmount >= 0 &&
+             data.status in ['Paid', 'Unpaid', 'Overdue'] &&
+             data.items is list &&
+             data.items.size() > 0 &&
+             data.items.size() <= 100 &&
+             data.dueDate is string &&
+             data.ownerId == request.auth.uid;
+    }
+
+    // --- Collections ---
+    match /patients/{patientId} {
+      // Identity Security
+      allow get: if isValidId(patientId) && isOwner(existing().ownerId);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      
+      allow create: if isSignedIn() && 
+                    isNewPatientValid(incoming()) && 
+                    incoming().created_at == request.time &&
+                    incoming().updated_at == request.time;
+
+      allow update: if isValidId(patientId) && isOwner(existing().ownerId) && 
+                    // Protect immutable fields
+                    (!incoming().keys().contains('ownerId') || incoming().ownerId == existing().ownerId) &&
+                    (!incoming().keys().contains('created_at') || incoming().created_at == existing().created_at) &&
+                    incoming().updated_at == request.time &&
+                    isFieldUpdateValid(incoming()) &&
+                    (
+                      // Action: Status Toggle
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updated_at'])) ||
+                      
+                      // Action: Full Edit
+                      (incoming().diff(existing()).affectedKeys().hasOnly([
+                        'patient_name', 'age', 'gender', 'phone_number', 'email', 'priority',
+                        'doctor_specialty', 'reason_for_visit', 'visit_type', 
+                        'appointment_date', 'consultation_fee', 'notes', 'status', 'updated_at'
+                      ]))
+                    );
+
+      allow delete: if isValidId(patientId) && isOwner(existing().ownerId);
+    }
+
+    match /prescriptions/{id} {
+      allow get: if isValidId(id) && isOwner(resource.data.ownerId);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() && isValidPrescription(incoming()) && incoming().date == request.time;
+      allow update: if isValidId(id) && isOwner(existing().ownerId) && 
+                    incoming().ownerId == existing().ownerId &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['medicines', 'instructions', 'patientName']);
+      allow delete: if isValidId(id) && isOwner(existing().ownerId);
+    }
+
+    match /invoices/{id} {
+      allow get: if isValidId(id) && isOwner(resource.data.ownerId);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() && isValidInvoice(incoming()) && incoming().date == request.time;
+      allow update: if isValidId(id) && isOwner(existing().ownerId) && 
+                    incoming().ownerId == existing().ownerId &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['status', 'items', 'totalAmount', 'dueDate']);
+      allow delete: if isValidId(id) && isOwner(existing().ownerId);
+    }
+  }
+}
