@@ -3,29 +3,23 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/
 import { doc, getDocFromServer, initializeFirestore } from 'firebase/firestore';
 import { getAnalytics } from "firebase/analytics";
 
-const firebaseConfig: {
-  projectId: string;
-  appId: string;
-  apiKey: string;
-  authDomain: string;
-  storageBucket: string;
-  messagingSenderId: string;
-  measurementId?: string;
-} = {
-  projectId: "dashboard-1d583",
-  appId: "1:159003602555:web:5cccc26c533d8461733cde",
-  apiKey: "AIzaSyDcDvyVMCGdnDWbeH0iYNER0sGt9YOFKms",
-  authDomain: "dashboard-1d583.firebaseapp.com",
-  storageBucket: "dashboard-1d583.firebasestorage.app",
-  messagingSenderId: "159003602555",
-  measurementId: "G-2PW40D91WH"
+// ✅ USE ENV VARIABLES (IMPORTANT)
+const firebaseConfig = {
+  projectId: import.meta.env.VITE_PROJECT_ID,
+  appId: import.meta.env.VITE_APP_ID,
+  apiKey: import.meta.env.VITE_API_KEY,
+  authDomain: import.meta.env.VITE_AUTH_DOMAIN,
+  storageBucket: import.meta.env.VITE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_MESSAGING_SENDER_ID,
+  measurementId: import.meta.env.VITE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);
+
 export const auth = getAuth(app);
 export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 
-// Use initializeFirestore with settings optimized for restricted / iframe environments
+// ✅ Firestore optimized
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 });
@@ -77,34 +71,40 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test connection on boot as per guidelines
+// ✅ Connection test
 export async function testConnection(): Promise<boolean> {
-  // Wait a small bit for state stabilization in iframes
   await new Promise(resolve => setTimeout(resolve, 1000));
   
   try {
-    // Try a lighter fetch first
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;
   } catch (err: unknown) {
     const error = err as { message?: string, code?: string };
-    
-    // Check if it's explicitly an offline error
-    if (typeof error?.message === 'string' && (error.message.includes('the client is offline') || error.message.includes('failed-precondition'))) {
-      console.warn("Firestore connection attempt: Client appears offline. Retrying with standard persistence...");
+
+    if (
+      typeof error?.message === 'string' &&
+      (error.message.includes('the client is offline') ||
+       error.message.includes('failed-precondition'))
+    ) {
+      console.warn("Firestore offline, retrying...");
     }
-    
-    // "No document found" or "permission denied" is actually a successful connection if it reached the server
-    if (error?.code === 'not-found' || error?.code === 'permission-denied' || 
-        (typeof error?.message === 'string' && (error.message.includes('not-found') || error.message.includes('permission-denied')))) {
-       return true;
+
+    if (
+      error?.code === 'not-found' ||
+      error?.code === 'permission-denied' ||
+      (typeof error?.message === 'string' &&
+        (error.message.includes('not-found') ||
+         error.message.includes('permission-denied')))
+    ) {
+      return true;
     }
+
     return false;
   }
 }
+
 void testConnection();
 
 export const googleProvider = new GoogleAuthProvider();
-
 export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
 export const logout = () => signOut(auth);
